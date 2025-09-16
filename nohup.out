@@ -689,3 +689,6 @@ System check identified 2 issues (0 silenced).
 Performing system checks...
 
 Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+Error: That port is already in use.
