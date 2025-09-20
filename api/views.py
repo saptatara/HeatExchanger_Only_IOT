@@ -1,15 +1,15 @@
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import TokenAuthentication, BasicAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from django.shortcuts import get_object_or_404
-from .models import SensorData, Device, Customer
+from django.shortcuts import get_object_or_404, render, redirect
+from django.contrib.auth.decorators import login_required
+from .models import SensorData, Device, Customer, SensorConfiguration
 from .serializers import SensorDataSerializer, DeviceSerializer, CustomerSerializer
 from rest_framework.authtoken.models import Token
-from django.shortcuts import render
-from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
+from .forms import SensorDataForm
 
 # Custom authentication function for device API keys
 def authenticate_device_api_key(request, device_id, key_type='write'):
@@ -21,7 +21,7 @@ def authenticate_device_api_key(request, device_id, key_type='write'):
         device = Device.objects.get(id=device_id)
     except Device.DoesNotExist:
         return None, Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-
+    
     # Get the authorization header
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
     
@@ -30,10 +30,10 @@ def authenticate_device_api_key(request, device_id, key_type='write'):
     
     # Extract the key (remove any prefix like "Bearer" or "Token")
     if ' ' in auth_header:
-        auth_key = auth_header.split(' ')[1]  # Get the part after the space
+        auth_type, auth_key = auth_header.split(' ', 1)
     else:
-        auth_key = auth_header  # Use the whole header if no space
-
+        auth_key = auth_header
+        
     # Validate the API key based on type
     if key_type == 'write' and auth_key == device.write_api_key:
         return device, None
@@ -42,25 +42,153 @@ def authenticate_device_api_key(request, device_id, key_type='write'):
     else:
         return None, Response({"error": "Invalid API key"}, status=status.HTTP_401_UNAUTHORIZED)
 
+# ==================== CUSTOMER UI VIEWS ====================
+
 @login_required
-def customer_dashboard(request, dashboard_uuid):
-    # Verify customer owns this dashboard
+def customer_dashboard(request):
+    """Dashboard for customer to see their devices and data"""
+    # Get customer for this user
+    customer = get_object_or_404(Customer, user=request.user)
+    devices = Device.objects.filter(customer=customer, is_active=True)
+    
+    # Get recent sensor data
+    recent_data = []
+    for device in devices:
+        data = SensorData.objects.filter(device=device).order_by('-created_at')[:5]
+        recent_data.extend(data)
+    
+    return render(request, 'api/customer_dashboard.html', {
+        'customer': customer,
+        'devices': devices,
+        'recent_data': recent_data
+    })
+
+@login_required
+def device_detail_ui(request, device_id):
+    """Detailed view for a specific device (UI version)"""
+    customer = get_object_or_404(Customer, user=request.user)
+    device = get_object_or_404(Device, id=device_id, customer=customer)
+    
+    # Get sensor data with config details
+    sensor_data = SensorData.objects.filter(device=device).select_related(
+        'sensor_config', 'sensor_config__sensor_type'
+    ).order_by('-created_at')[:100]
+    
+    return render(request, 'api/device_detail.html', {
+        'device': device,
+        'sensor_data': sensor_data
+    })
+
+@login_required
+def add_sensor_data(request):
+    """Form to manually add sensor data (customer-specific)"""
+    customer = get_object_or_404(Customer, user=request.user)
+    
+    if request.method == 'POST':
+        form = SensorDataForm(customer, request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('customer_dashboard')
+    else:
+        form = SensorDataForm(customer)
+    
+    return render(request, 'api/add_sensor_data.html', {'form': form})
+
+@login_required
+def sensor_configurations(request):
+    """Manage sensor configurations for customer's devices"""
+    customer = get_object_or_404(Customer, user=request.user)
+    devices = Device.objects.filter(customer=customer, is_active=True)
+    configs = SensorConfiguration.objects.filter(device__in=devices)
+    
+    return render(request, 'api/sensor_configurations.html', {
+        'configs': configs,
+        'devices': devices
+    })
+
+@login_required
+def customer_dashboard_uuid(request, dashboard_uuid):
+    """Legacy dashboard view with UUID"""
     customer = get_object_or_404(Customer, dashboard_url=dashboard_uuid, user=request.user)
     devices = Device.objects.filter(customer=customer, is_active=True)
-
+    
     context = {
         'customer': customer,
         'devices': devices,
         'dashboard_uuid': dashboard_uuid
     }
-
     return render(request, 'dashboard/customer_dashboard.html', context)
+
+# ==================== API ENDPOINTS ====================
+
+@api_view(['POST'])
+def write_data(request, device_id):
+    """Write sensor data using device write API key"""
+    device, error_response = authenticate_device_api_key(request, device_id, 'write')
+    if error_response:
+        return error_response
+
+    # Handle both direct sensor_data object and nested sensor_data format
+    if 'sensor_data' in request.data:
+        data = request.data['sensor_data']
+    else:
+        data = request.data
+
+    # Create sensor data for each field
+    created_data = []
+    for sensor_label, value in data.items():
+        try:
+            sensor_config = SensorConfiguration.objects.get(
+                device=device, 
+                sensor_label=sensor_label
+            )
+            sensor_data = SensorData.objects.create(
+                device=device,
+                sensor_config=sensor_config,
+                value=value
+            )
+            created_data.append(sensor_data)
+        except SensorConfiguration.DoesNotExist:
+            continue
+
+    if created_data:
+        serializer = SensorDataSerializer(created_data, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    else:
+        return Response({"error": "No valid sensor data received"}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+def read_data(request, device_id):
+    """Read sensor data using device read API key"""
+    device, error_response = authenticate_device_api_key(request, device_id, 'read')
+    if error_response:
+        return error_response
+
+    limit = request.GET.get('limit', 100)
+    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')[:int(limit)]
+    serializer = SensorDataSerializer(sensor_data, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def get_sensor_data(request, device_id):
+    """Get sensor data (requires user authentication)"""
+    try:
+        device = Device.objects.get(id=device_id, customer__user=request.user)
+    except Device.DoesNotExist:
+        return Response({"error": "Device not found or you don't have permission"}, status=status.HTTP_404_NOT_FOUND)
+
+    limit = request.GET.get('limit', 100)
+    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')[:int(limit)]
+    serializer = SensorDataSerializer(sensor_data, many=True)
+    return Response(serializer.data)
 
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def customer_devices_data(request, dashboard_uuid):
-    # API endpoint for dashboard data
+    """API endpoint for dashboard data"""
     customer = get_object_or_404(Customer, dashboard_url=dashboard_uuid, user=request.user)
     devices = Device.objects.filter(customer=customer, is_active=True)
     data = []
@@ -76,47 +204,7 @@ def customer_devices_data(request, dashboard_uuid):
 
     return Response(data)
 
-@api_view(['POST'])
-def write_data(request, device_id):
-    """Write sensor data using device write API key"""
-    device, error_response = authenticate_device_api_key(request, device_id, 'write')
-    if error_response:
-        return error_response
-
-    serializer = SensorDataSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(device=device)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['GET'])
-def read_data(request, device_id):
-    """Read sensor data using device read API key"""
-    device, error_response = authenticate_device_api_key(request, device_id, 'read')
-    if error_response:
-        return error_response
-
-    limit = request.GET.get('limit', 100)
-    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')[:int(limit)]
-    serializer = SensorDataSerializer(sensor_data, many=True)
-    return Response(serializer.data)
-
-# Keep the original get_sensor_data function for backward compatibility
-@api_view(['GET'])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
-def get_sensor_data(request, device_id):
-    """Get sensor data (requires user authentication) - Legacy function"""
-    try:
-        device = Device.objects.get(id=device_id, user=request.user)
-    except Device.DoesNotExist:
-        return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    limit = request.GET.get('limit', 100)
-    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')[:int(limit)]
-    serializer = SensorDataSerializer(sensor_data, many=True)
-    return Response(serializer.data)
+# ==================== DEVICE MANAGEMENT API ====================
 
 @api_view(['GET', 'POST'])
 @authentication_classes([TokenAuthentication])
@@ -124,24 +212,26 @@ def get_sensor_data(request, device_id):
 def device_list(request):
     """Manage devices (requires user authentication)"""
     if request.method == 'GET':
-        devices = Device.objects.filter(user=request.user)
+        devices = Device.objects.filter(customer__user=request.user)
         serializer = DeviceSerializer(devices, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
         serializer = DeviceSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(user=request.user)
+            # Automatically assign to customer
+            customer = get_object_or_404(Customer, user=request.user)
+            serializer.save(customer=customer)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
-def device_detail(request, device_id):
-    """Manage specific device (requires user authentication)"""
+def device_detail_api(request, device_id):
+    """Manage specific device (API version)"""
     try:
-        device = Device.objects.get(id=device_id, user=request.user)
+        device = Device.objects.get(id=device_id, customer__user=request.user)
     except Device.DoesNotExist:
         return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -160,8 +250,10 @@ def device_detail(request, device_id):
         device.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+# ==================== AUTHENTICATION API ====================
+
 @api_view(['POST'])
-@authentication_classes([TokenAuthentication])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def create_apikey(request):
     """Create or get API token for authenticated user"""
@@ -212,7 +304,7 @@ def customer_devices(request, customer_id):
     """Get all devices for a specific customer"""
     try:
         customer = Customer.objects.get(id=customer_id, user=request.user)
-        devices = Device.objects.filter(user=customer.user)
+        devices = Device.objects.filter(customer=customer)
         serializer = DeviceSerializer(devices, many=True)
         return Response(serializer.data)
     except Customer.DoesNotExist:

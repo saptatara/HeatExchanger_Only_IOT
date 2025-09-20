@@ -1,0 +1,29 @@
+<!-- api/templates/api/customer_dashboard.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ customer.company_name }} Dashboard</title>
+</head>
+<body>
+    <h1>Welcome, {{ customer.company_name }}</h1>
+    
+    <h2>Your Devices</h2>
+    {% for device in devices %}
+    <div>
+        <h3>{{ device.name }}</h3>
+        <p>Location: {{ device.location }}</p>
+        <p>Type: {{ device.device_type.name }}</p>
+        <a href="{% url 'device_detail' device.id %}">View Details</a>
+    </div>
+    {% endfor %}
+    
+    <h2>Recent Data</h2>
+    {% for data in recent_data %}
+    <div>
+        {{ data.device.name }} - {{ data.sensor_config.sensor_label }}: 
+        {{ data.value }} {{ data.sensor_config.sensor_type.unit }}
+        ({{ data.created_at }})
+    </div>
+    {% endfor %}
+</body>
+</html>

@@ -211,3 +211,54 @@
 [2025-09-20 01:43:19 +0000] [7634] [INFO] Booting worker with pid: 7634
 [2025-09-20 01:43:19 +0000] [7635] [INFO] Booting worker with pid: 7635
 [2025-09-20 01:43:20 +0000] [7636] [INFO] Booting worker with pid: 7636
+[2025-09-20 02:04:53 +0000] [7632] [INFO] Handling signal: term
+[2025-09-19 21:04:53 -0500] [7636] [INFO] Worker exiting (pid: 7636)
+[2025-09-19 21:04:53 -0500] [7635] [INFO] Worker exiting (pid: 7635)
+[2025-09-19 21:04:53 -0500] [7634] [INFO] Worker exiting (pid: 7634)
+[2025-09-20 02:04:53 +0000] [7632] [INFO] Shutting down: Master
+[2025-09-20 02:04:56 +0000] [7815] [INFO] Starting gunicorn 21.2.0
+[2025-09-20 02:04:56 +0000] [7815] [INFO] Listening at: http://0.0.0.0:8000 (7815)
+[2025-09-20 02:04:56 +0000] [7815] [INFO] Using worker: sync
+[2025-09-20 02:04:56 +0000] [7817] [INFO] Booting worker with pid: 7817
+[2025-09-20 02:04:56 +0000] [7818] [INFO] Booting worker with pid: 7818
+[2025-09-20 02:04:56 +0000] [7819] [INFO] Booting worker with pid: 7819
+[2025-09-20 02:12:47 +0000] [7815] [INFO] Handling signal: term
+[2025-09-19 21:12:47 -0500] [7817] [INFO] Worker exiting (pid: 7817)
+[2025-09-19 21:12:47 -0500] [7818] [INFO] Worker exiting (pid: 7818)
+[2025-09-19 21:12:47 -0500] [7819] [INFO] Worker exiting (pid: 7819)
+[2025-09-20 02:12:47 +0000] [7815] [ERROR] Worker (pid:7817) was sent SIGTERM!
+[2025-09-20 02:12:47 +0000] [7815] [ERROR] Worker (pid:7818) was sent SIGTERM!
+[2025-09-20 02:12:47 +0000] [7815] [ERROR] Worker (pid:7819) was sent SIGTERM!
+[2025-09-20 02:12:47 +0000] [7815] [INFO] Shutting down: Master
+[2025-09-20 02:12:49 +0000] [7895] [INFO] Starting gunicorn 21.2.0
+[2025-09-20 02:12:49 +0000] [7895] [INFO] Listening at: http://0.0.0.0:8000 (7895)
+[2025-09-20 02:12:49 +0000] [7895] [INFO] Using worker: sync
+[2025-09-20 02:12:49 +0000] [7897] [INFO] Booting worker with pid: 7897
+[2025-09-20 02:12:50 +0000] [7898] [INFO] Booting worker with pid: 7898
+[2025-09-20 02:12:50 +0000] [7899] [INFO] Booting worker with pid: 7899
+[2025-09-20 02:32:22 +0000] [7895] [CRITICAL] WORKER TIMEOUT (pid:7897)
+[2025-09-19 21:32:22 -0500] [7897] [INFO] Worker exiting (pid: 7897)
+[2025-09-20 02:32:23 +0000] [7895] [ERROR] Worker (pid:7897) exited with code 1
+[2025-09-20 02:32:23 +0000] [7895] [ERROR] Worker (pid:7897) exited with code 1.
+[2025-09-20 02:32:23 +0000] [7987] [INFO] Booting worker with pid: 7987
+[2025-09-19 22:27:41 -0500] [7898] [INFO] Worker exiting (pid: 7898)
+[2025-09-20 03:27:41 +0000] [7895] [INFO] Handling signal: term
+[2025-09-19 22:27:41 -0500] [7899] [INFO] Worker exiting (pid: 7899)
+[2025-09-19 22:27:41 -0500] [7987] [INFO] Worker exiting (pid: 7987)
+[2025-09-20 03:27:41 +0000] [7895] [ERROR] Worker (pid:7898) was sent SIGTERM!
+[2025-09-20 03:27:41 +0000] [7895] [INFO] Shutting down: Master
+[2025-09-20 03:27:43 +0000] [8543] [INFO] Starting gunicorn 21.2.0
+[2025-09-20 03:27:43 +0000] [8543] [INFO] Listening at: http://0.0.0.0:8000 (8543)
+[2025-09-20 03:27:43 +0000] [8543] [INFO] Using worker: sync
+[2025-09-20 03:27:43 +0000] [8545] [INFO] Booting worker with pid: 8545
+[2025-09-20 03:27:43 +0000] [8546] [INFO] Booting worker with pid: 8546
+[2025-09-20 03:27:43 +0000] [8547] [INFO] Booting worker with pid: 8547
+[2025-09-20 03:41:27 +0000] [8543] [INFO] Handling signal: hup
+[2025-09-20 03:41:27 +0000] [8543] [INFO] Hang up: Master
+[2025-09-20 03:41:27 +0000] [8773] [INFO] Booting worker with pid: 8773
+[2025-09-20 03:41:27 +0000] [8774] [INFO] Booting worker with pid: 8774
+[2025-09-20 03:41:27 +0000] [8543] [INFO] Handling signal: term
+[2025-09-20 03:41:27 +0000] [8775] [INFO] Booting worker with pid: 8775
+[2025-09-19 22:41:28 -0500] [8773] [INFO] Worker exiting (pid: 8773)
+[2025-09-19 22:41:28 -0500] [8774] [INFO] Worker exiting (pid: 8774)
+[2025-09-20 03:41:57 +0000] [8543] [INFO] Shutting down: Master
