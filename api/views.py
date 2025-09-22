@@ -10,6 +10,7 @@ from .serializers import SensorDataSerializer, DeviceSerializer, CustomerSeriali
 from rest_framework.authtoken.models import Token
 from django.http import JsonResponse
 from .forms import SensorDataForm
+from .authentication import DeviceAuthentication
 
 # Custom authentication function for device API keys
 def authenticate_device_api_key(request, device_id, key_type='write'):
@@ -124,36 +125,94 @@ def customer_dashboard_uuid(request, dashboard_uuid):
 @api_view(['POST'])
 def write_data(request, device_id):
     """Write sensor data using device write API key"""
-    device, error_response = authenticate_device_api_key(request, device_id, 'write')
-    if error_response:
-        return error_response
-
-    # Handle both direct sensor_data object and nested sensor_data format
-    if 'sensor_data' in request.data:
-        data = request.data['sensor_data']
+    # Get the authorization header
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+    
+    if not auth_header:
+        return Response({"error": "Authorization header required"}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    # Extract the key (remove any prefix like "Bearer" or "Token")
+    if ' ' in auth_header:
+        auth_type, auth_key = auth_header.split(' ', 1)
     else:
-        data = request.data
-
+        auth_key = auth_header
+    
+    # Try to find the device with this API key
+    try:
+        device = Device.objects.get(
+            id=device_id,
+            write_api_key=auth_key,
+            is_active=True
+        )
+    except Device.DoesNotExist:
+        return Response({"error": "Invalid device or API key"}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    # Handle the request data
+    data = request.data
+    
     # Create sensor data for each field
     created_data = []
     for sensor_label, value in data.items():
         try:
+            # Try to get existing sensor configuration
             sensor_config = SensorConfiguration.objects.get(
-                device=device, 
+                device=device,
                 sensor_label=sensor_label
             )
+        except SensorConfiguration.DoesNotExist:
+            # Create a new sensor configuration if it doesn't exist
+            try:
+                # Try to determine sensor type from label
+                if sensor_label.startswith('T'):
+                    unit = '°C'
+                    sensor_type_name = 'Temperature'
+                elif sensor_label.startswith('P'):
+                    unit = 'kPa'
+                    sensor_type_name = 'Pressure'
+                elif sensor_label.startswith('F'):
+                    unit = 'L/min'
+                    sensor_type_name = 'Flow'
+                else:
+                    unit = 'units'
+                    sensor_type_name = 'Generic'
+                
+                sensor_type, created = SensorType.objects.get_or_create(
+                    name=sensor_type_name,
+                    defaults={'unit': unit, 'description': f'Auto-created for {sensor_label}'}
+                )
+                
+                sensor_config = SensorConfiguration.objects.create(
+                    device=device,
+                    sensor_type=sensor_type,
+                    sensor_label=sensor_label
+                )
+            except Exception as e:
+                print(f"Error creating sensor config for {sensor_label}: {e}")
+                continue
+        
+        # Create the sensor data entry
+        try:
             sensor_data = SensorData.objects.create(
                 device=device,
                 sensor_config=sensor_config,
-                value=value
+                value=float(value)
             )
             created_data.append(sensor_data)
-        except SensorConfiguration.DoesNotExist:
+        except Exception as e:
+            print(f"Error creating sensor data for {sensor_label}: {e}")
             continue
 
     if created_data:
-        serializer = SensorDataSerializer(created_data, many=True)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Use a simple serializer or just return basic info
+        response_data = [{
+            'id': data.id,
+            'device': data.device.id,
+            'sensor_label': data.sensor_config.sensor_label,
+            'value': data.value,
+            'created_at': data.created_at.isoformat()
+        } for data in created_data]
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
     else:
         return Response({"error": "No valid sensor data received"}, status=status.HTTP_400_BAD_REQUEST)
 
