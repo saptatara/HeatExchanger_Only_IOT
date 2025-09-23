@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="margin: 20px;">
+  <h2>Device Details: {{ device.name }}</h2>
+  <p><strong>Location:</strong> {{ device.location }}</p>
+  <p><strong>Type:</strong> {{ device.device_type }}</p>
+
+  <h3>Recent Sensor Data</h3>
+  <canvas id="sensorChart" width="600" height="300"></canvas>
+
+  <ul>
+    {% for data in device.sensordata_set.all|dictsort:"-timestamp"|slice:":10" %}
+      <li>
+        {{ data.sensor_type }}: {{ data.value }} ({{ data.timestamp|date:"M d, Y H:i" }})
+      </li>
+    {% empty %}
+      <li>No data available</li>
+    {% endfor %}
+  </ul>
+
+  <a href="{% url 'customer_dashboard' %}">⬅ Back to Dashboard</a>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const ctx = document.getElementById('sensorChart').getContext('2d');
+
+  const labels = [
+    {% for data in device.sensordata_set.all|dictsort:"timestamp"|slice:":20" %}
+      "{{ data.timestamp|date:"H:i" }}",
+    {% endfor %}
+  ];
+
+  const tempData = [
+    {% for data in device.sensordata_set.all|dictsort:"timestamp"|slice:":20" %}
+      {% if data.sensor_type == "T1" %}
+        {{ data.value }},
+      {% endif %}
+    {% endfor %}
+  ];
+
+  const pressureData = [
+    {% for data in device.sensordata_set.all|dictsort:"timestamp"|slice:":20" %}
+      {% if data.sensor_type == "P1" %}
+        {{ data.value }},
+      {% endif %}
+    {% endfor %}
+  ];
+
+  const flowData = [
+    {% for data in device.sensordata_set.all|dictsort:"timestamp"|slice:":20" %}
+      {% if data.sensor_type == "F1" %}
+        {{ data.value }},
+      {% endif %}
+    {% endfor %}
+  ];
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Temperature (°C)",
+          data: tempData,
+          borderColor: "red",
+          backgroundColor: "rgba(255,0,0,0.2)",
+          fill: false
+        },
+        {
+          label: "Pressure (kPa)",
+          data: pressureData,
+          borderColor: "blue",
+          backgroundColor: "rgba(0,0,255,0.2)",
+          fill: false
+        },
+        {
+          label: "Flow (L/min)",
+          data: flowData,
+          borderColor: "green",
+          backgroundColor: "rgba(0,255,0,0.2)",
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom' }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Time' } },
+        y: { title: { display: true, text: 'Value' } }
+      }
+    }
+  });
+</script>
+{% endblock %}
+

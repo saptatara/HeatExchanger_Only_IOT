@@ -11,8 +11,33 @@ from rest_framework.authtoken.models import Token
 from django.http import JsonResponse
 from .forms import SensorDataForm
 from .authentication import DeviceAuthentication
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import authenticate, login, logout
 
 # Custom authentication function for device API keys
+def customer_login(request):
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        user = authenticate(request, username=username, password=password)
+        if user:
+            login(request, user)
+            try:
+                customer = Customer.objects.get(user=user)
+                return redirect("customer_dashboard_ui", dashboard_uuid=customer.dashboard_url)
+            except Customer.DoesNotExist:
+                return render(request, "login.html", {"error": "No customer account linked to this user"})
+        else:
+            return render(request, "login.html", {"error": "Invalid username or password"})
+    return render(request, "login.html")
+
+
+def customer_logout(request):
+    logout(request)
+    return redirect("customer_login")
 def authenticate_device_api_key(request, device_id, key_type='write'):
     """
     Authenticate using device API key
@@ -122,22 +147,35 @@ def customer_dashboard_uuid(request, dashboard_uuid):
 
 # ==================== API ENDPOINTS ====================
 
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import Device, SensorConfiguration, SensorType, SensorData
+
+
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Device, SensorConfiguration, SensorType, SensorData
+
 @api_view(['POST'])
+@permission_classes([AllowAny])         # allow POST without Django login
+@authentication_classes([])             # disable default TokenAuthentication
 def write_data(request, device_id):
-    """Write sensor data using device write API key"""
-    # Get the authorization header
+    """Write sensor data from IoT device using its write API key"""
+
+    # --- Step 1: Validate API Key ---
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-    
     if not auth_header:
         return Response({"error": "Authorization header required"}, status=status.HTTP_401_UNAUTHORIZED)
-    
-    # Extract the key (remove any prefix like "Bearer" or "Token")
+
     if ' ' in auth_header:
-        auth_type, auth_key = auth_header.split(' ', 1)
+        _, auth_key = auth_header.split(' ', 1)
     else:
         auth_key = auth_header
-    
-    # Try to find the device with this API key
+
     try:
         device = Device.objects.get(
             id=device_id,
@@ -146,102 +184,196 @@ def write_data(request, device_id):
         )
     except Device.DoesNotExist:
         return Response({"error": "Invalid device or API key"}, status=status.HTTP_401_UNAUTHORIZED)
-    
-    # Handle the request data
+
+    # --- Step 2: Process sensor values ---
     data = request.data
-    
-    # Create sensor data for each field
     created_data = []
+
     for sensor_label, value in data.items():
+        # Skip null / missing values
+        if value in [None, "null", "None", ""]:
+            continue
+
         try:
-            # Try to get existing sensor configuration
-            sensor_config = SensorConfiguration.objects.get(
-                device=device,
-                sensor_label=sensor_label
-            )
-        except SensorConfiguration.DoesNotExist:
-            # Create a new sensor configuration if it doesn't exist
+            # Get or create sensor config
             try:
-                # Try to determine sensor type from label
-                if sensor_label.startswith('T'):
-                    unit = '°C'
-                    sensor_type_name = 'Temperature'
-                elif sensor_label.startswith('P'):
-                    unit = 'kPa'
-                    sensor_type_name = 'Pressure'
-                elif sensor_label.startswith('F'):
-                    unit = 'L/min'
-                    sensor_type_name = 'Flow'
+                sensor_config = SensorConfiguration.objects.get(
+                    device=device,
+                    sensor_label=sensor_label
+                )
+            except SensorConfiguration.DoesNotExist:
+                # Detect sensor type by prefix
+                if sensor_label.upper().startswith('T'):
+                    unit = '°C'; sensor_type_name = 'Temperature'
+                elif sensor_label.upper().startswith('P'):
+                    unit = 'kPa'; sensor_type_name = 'Pressure'
+                elif sensor_label.upper().startswith('F'):
+                    unit = 'L/min'; sensor_type_name = 'Flow'
                 else:
-                    unit = 'units'
-                    sensor_type_name = 'Generic'
-                
-                sensor_type, created = SensorType.objects.get_or_create(
+                    unit = 'units'; sensor_type_name = 'Generic'
+
+                sensor_type, _ = SensorType.objects.get_or_create(
                     name=sensor_type_name,
                     defaults={'unit': unit, 'description': f'Auto-created for {sensor_label}'}
                 )
-                
+
                 sensor_config = SensorConfiguration.objects.create(
                     device=device,
                     sensor_type=sensor_type,
                     sensor_label=sensor_label
                 )
-            except Exception as e:
-                print(f"Error creating sensor config for {sensor_label}: {e}")
-                continue
-        
-        # Create the sensor data entry
-        try:
+
+            # Create sensor data row
             sensor_data = SensorData.objects.create(
                 device=device,
                 sensor_config=sensor_config,
                 value=float(value)
             )
             created_data.append(sensor_data)
+
         except Exception as e:
-            print(f"Error creating sensor data for {sensor_label}: {e}")
+            print(f"⚠️ Error saving data for {sensor_label}: {e}")
             continue
 
+    # --- Step 3: Return response ---
     if created_data:
-        # Use a simple serializer or just return basic info
         response_data = [{
-            'id': data.id,
-            'device': data.device.id,
-            'sensor_label': data.sensor_config.sensor_label,
-            'value': data.value,
-            'created_at': data.created_at.isoformat()
-        } for data in created_data]
-        
+            'id': d.id,
+            'device': d.device.id,
+            'sensor_label': d.sensor_config.sensor_label,
+            'value': d.value,
+            'created_at': d.created_at.isoformat()
+        } for d in created_data]
+
         return Response(response_data, status=status.HTTP_201_CREATED)
     else:
         return Response({"error": "No valid sensor data received"}, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['GET'])
-def read_data(request, device_id):
-    """Read sensor data using device read API key"""
-    device, error_response = authenticate_device_api_key(request, device_id, 'read')
-    if error_response:
-        return error_response
-
-    limit = request.GET.get('limit', 100)
-    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')[:int(limit)]
-    serializer = SensorDataSerializer(sensor_data, many=True)
-    return Response(serializer.data)
 
 @api_view(['GET'])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
-def get_sensor_data(request, device_id):
-    """Get sensor data (requires user authentication)"""
+@login_required
+def customer_dashboard_data(request, dashboard_uuid):
+    """
+    Returns all devices + latest sensor values for a specific customer dashboard.
+    Ensures only the logged-in customer's data is returned.
+    """
     try:
-        device = Device.objects.get(id=device_id, customer__user=request.user)
-    except Device.DoesNotExist:
-        return Response({"error": "Device not found or you don't have permission"}, status=status.HTTP_404_NOT_FOUND)
+        customer = Customer.objects.get(user=request.user, dashboard_url=dashboard_uuid)
+    except Customer.DoesNotExist:
+        return Response({"error": "Unauthorized or invalid dashboard"}, status=status.HTTP_403_FORBIDDEN)
 
-    limit = request.GET.get('limit', 100)
-    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')[:int(limit)]
-    serializer = SensorDataSerializer(sensor_data, many=True)
-    return Response(serializer.data)
+    devices = Device.objects.filter(customer=customer, is_active=True)
+    dashboard_data = []
+
+    for device in devices:
+        sensors_data = {}
+        for config in SensorConfiguration.objects.filter(device=device):
+            last_value = SensorData.objects.filter(device=device, sensor_config=config).order_by('-created_at').first()
+            if last_value:
+                sensors_data[config.sensor_label] = {
+                    "value": last_value.value,
+                    "created_at": last_value.created_at.isoformat()
+                }
+
+        dashboard_data.append({
+            "device_id": device.id,
+            "device_name": device.name,
+            "sensors": sensors_data
+        })
+
+    return Response({
+        "customer": customer.company_name,
+        "dashboard_uuid": str(customer.dashboard_url),
+        "devices": dashboard_data
+    }, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@authentication_classes([])  
+@permission_classes([])     
+def read_data(request, device_id):
+    """Read latest sensor values for a device using its read API key"""
+    # Get Authorization header
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+
+    if not auth_header:
+        return Response({"error": "Authorization header required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Extract key
+    if ' ' in auth_header:
+        _, auth_key = auth_header.split(' ', 1)
+    else:
+        auth_key = auth_header
+
+    # Validate device + read key
+    try:
+        device = Device.objects.get(
+            id=device_id,
+            read_api_key=auth_key,
+            is_active=True
+        )
+    except Device.DoesNotExist:
+        return Response({"error": "Invalid device or API key"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Collect latest sensor values per label
+    latest_data = {}
+    sensor_configs = SensorConfiguration.objects.filter(device=device)
+
+    for config in sensor_configs:
+        last_value = SensorData.objects.filter(device=device, sensor_config=config).order_by('-created_at').first()
+        if last_value:
+            latest_data[config.sensor_label] = {
+                "value": last_value.value,
+                "created_at": last_value.created_at.isoformat()
+            }
+
+    return Response({
+        "device_id": device.id,
+        "device_name": device.name,
+        "sensors": latest_data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([])
+def get_sensor_data(request, device_id):
+    """Get all sensor data for a device using read API key"""
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+
+    if not auth_header:
+        return Response({"error": "Authorization header required"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    if ' ' in auth_header:
+        _, auth_key = auth_header.split(' ', 1)
+    else:
+        auth_key = auth_header
+
+    try:
+        device = Device.objects.get(
+            id=device_id,
+            read_api_key=auth_key,
+            is_active=True
+        )
+    except Device.DoesNotExist:
+        return Response({"error": "Invalid device or API key"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Group sensor data per label
+    sensor_data = SensorData.objects.filter(device=device).order_by('-created_at')
+
+    response_data = {}
+    for data in sensor_data:
+        label = data.sensor_config.sensor_label
+        if label not in response_data:
+            response_data[label] = []
+        response_data[label].append({
+            "id": data.id,
+            "value": data.value,
+            "created_at": data.created_at.isoformat()
+        })
+
+    return Response(response_data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication])
@@ -284,19 +416,33 @@ def device_list(request):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+
 @api_view(['GET', 'PUT', 'DELETE'])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def device_detail_api(request, device_id):
-    """Manage specific device (API version)"""
+    """Manage specific device (API version) including latest sensor data"""
     try:
+        # Ensure the device belongs to the logged-in customer
         device = Device.objects.get(id=device_id, customer__user=request.user)
     except Device.DoesNotExist:
         return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = DeviceSerializer(device)
-        return Response(serializer.data)
+        # Serialize the device
+        device_serializer = DeviceSerializer(device)
+
+        # Get the latest 50 sensor readings for this device
+        sensor_readings = device.sensor_data.all()[:50]  # using related_name 'sensor_data'
+        sensor_serializer = SensorDataSerializer(sensor_readings, many=True)
+
+        # Combine device and sensor data in one response
+        return Response({
+            "device": device_serializer.data,
+            "sensor_data": sensor_serializer.data
+        })
 
     elif request.method == 'PUT':
         serializer = DeviceSerializer(device, data=request.data, partial=True)
@@ -308,6 +454,8 @@ def device_detail_api(request, device_id):
     elif request.method == 'DELETE':
         device.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 
 # ==================== AUTHENTICATION API ====================
 
@@ -362,9 +510,45 @@ def delete_apikey(request):
 def customer_devices(request, customer_id):
     """Get all devices for a specific customer"""
     try:
-        customer = Customer.objects.get(id=customer_id, user=request.user)
+        customer = Customer.objects.get(user=request.user,dashboard_url=dashboard_uuid)
         devices = Device.objects.filter(customer=customer)
         serializer = DeviceSerializer(devices, many=True)
         return Response(serializer.data)
     except Customer.DoesNotExist:
         return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+def dashboard_view(request, dashboard_uuid):
+    return render(request, 'dashboard.html', {'dashboard_uuid': dashboard_uuid})
+
+
+@login_required
+def device_detail(request, device_id):
+    try:
+        device = Device.objects.get(id=device_id, customer__user=request.user)
+    except Device.DoesNotExist:
+        return render(request, 'api/device_detail.html', {'error': 'Device not found'})
+
+    # Get last 50 readings for each sensor for better performance
+    readings = SensorData.objects.filter(device=device).order_by('-created_at')[:200]
+
+    # Group readings by sensor label and sort by time ascending
+    sensor_data = {}
+    for r in readings:
+        label = r.sensor_config.sensor_label
+        if label not in sensor_data:
+            sensor_data[label] = []
+        sensor_data[label].append({
+            'timestamp': r.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'value': r.value
+        })
+
+    # Sort each sensor data by timestamp ascending
+    for label in sensor_data:
+        sensor_data[label].sort(key=lambda x: x['timestamp'])
+
+    context = {
+        'device': device,
+        'sensor_data': sensor_data,  # for Chart.js
+        'sensor_readings': readings,  # for textual list if needed
+    }
+    return render(request, 'api/device_detail.html', context)
+

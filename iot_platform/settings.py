@@ -65,3 +65,6 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ]
 }
+# Redirect users to their dashboard after login
+LOGIN_REDIRECT_URL = '/api/ui/dashboard/'
+

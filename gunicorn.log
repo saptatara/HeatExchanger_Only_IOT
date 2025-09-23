@@ -1,1 +1,18 @@
-Unauthorized: /api/write_data/1/
+Not Found: /
+Invalid HTTP_HOST header: '_'. The domain name provided is not valid according to RFC 1034/1035.
+Traceback (most recent call last):
+  File "/home/ubuntu/HeatExchanger_Only_IOT/venv/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/HeatExchanger_Only_IOT/venv/lib/python3.12/site-packages/django/utils/deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/HeatExchanger_Only_IOT/venv/lib/python3.12/site-packages/django/middleware/common.py", line 48, in process_request
+    host = request.get_host()
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/HeatExchanger_Only_IOT/venv/lib/python3.12/site-packages/django/http/request.py", line 202, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: '_'. The domain name provided is not valid according to RFC 1034/1035.
+Not Found: /
+Not Found: /manage/account/login
+Not Found: /index.html

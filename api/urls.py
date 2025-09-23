@@ -1,10 +1,16 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .views import customer_dashboard_data, dashboard_view
+
 from . import views
+
+
+
 
 urlpatterns = [
     # Customer UI Views
     path('ui/dashboard/', views.customer_dashboard, name='customer_dashboard'),
+    path('ui/device/<int:device_id>/', views.device_detail, name='device_detail'),
     path('ui/device/<int:device_id>/', views.device_detail_ui, name='device_detail_ui'),
     path('ui/add-sensor-data/', views.add_sensor_data, name='add_sensor_data'),
     path('ui/sensor-configs/', views.sensor_configurations, name='sensor_configurations'),
@@ -26,6 +32,19 @@ urlpatterns = [
     # Customer API
     path('customer/<int:customer_id>/devices/', views.customer_devices, name='customer_devices'),
     
+
+
+    # Dashboard UI
+#    path('ui/dashboard/<uuid:dashboard_uuid>/', dashboard_view, name='customer_dashboard_ui'),
+#    path('dashboard/<uuid:dashboard_uuid>/data/', customer_dashboard_data, name='customer_dashboard_data'),
+
+    path("ui/login/", views.customer_login, name="customer_login"),
+    path("ui/logout/", views.customer_logout, name="customer_logout"),
+    path("ui/dashboard/<uuid:dashboard_uuid>/", views.customer_dashboard, name="customer_dashboard_ui"),
+    path("dashboard/<uuid:dashboard_uuid>/data/", views.customer_dashboard_data, name="customer_dashboard_data"),
+
+
+
     # Legacy URLs (keep for backward compatibility)
     path('dashboard/<uuid:dashboard_uuid>/', views.customer_dashboard_uuid, name='customer_dashboard_uuid'),
     path('api/dashboard/<uuid:dashboard_uuid>/data/', views.customer_devices_data, name='customer_dashboard_data'),
